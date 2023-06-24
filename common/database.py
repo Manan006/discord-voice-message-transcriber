@@ -11,7 +11,8 @@ import aiofiles
 dotenv.load_dotenv()
 
 class mariadb: # Class which handles the mariadb connection. MUST BE ENDED WITH `mariadb.end()`
-    def __init__(self, clean_tables: Union[None, List[str]] = []) -> None:
+    def __init__(self, clean_tables: Union[None, List[str]] = [], auto_commit:bool = False) -> None:
+        self.auto_commit = auto_commit
         self.loop = asyncio.get_event_loop()
         if type(clean_tables) is str: # If only one table is to be cleaned and the input is a string
             self.clean_tables = (clean_tables,)
@@ -24,10 +25,15 @@ class mariadb: # Class which handles the mariadb connection. MUST BE ENDED WITH 
         self.logger = logger("mariadb")
         self.aiomysql = aiomysql
         self.files = aiofiles
-        self.loop.run_until_complete(self.__ainit__()) # Run the async init function
+        self.success = self.loop.run_until_complete(self.__ainit__()) # Run the async init function
 
     async def __ainit__(self) -> None:
-        self.pool = await self.generate_mariadb_pool()
+        try:
+            self.pool = await self.generate_mariadb_pool()
+        except Exception as e:
+            self.logger.error("Unable to connect to database")
+            self.logger.exception(e)
+            return False
         self.logger.debug("Generated mariadb pool")
         self.conn = await self.pool.acquire()
         self.logger.debug("Generated mariadb internal connection")
@@ -37,8 +43,7 @@ class mariadb: # Class which handles the mariadb connection. MUST BE ENDED WITH 
         if self.clean_tables is not None: # If the clean_tables variable is requested
             await self.table_clean()
         await self.conn.commit()
-        print("ae")
-
+        return True
     def pool_to_cursor(self, func: Callable[..., Any]): # Decorator which adds a cursor parameter to the function it is being called upon
         @self.functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any):
@@ -84,13 +89,13 @@ class mariadb: # Class which handles the mariadb connection. MUST BE ENDED WITH 
     async def generate_mariadb_pool(self) -> aiomysql.pool.Pool:
         self.logger.info("Initializing mariadb")
         pool = await self.aiomysql.create_pool(host=os.getenv("DB_HOST"),
-                                               port=int(os.getenv("DB_PORT")),
-                                               user=os.getenv("DB_USER"),
-                                               password=os.getenv("DB_PASSWORD"),
-                                               db=os.getenv("DB_NAME"),
-                                               autocommit=False, # Autocommit is set to false so that the connection can be committed after the query is executed
-                                               minsize=1, # Minimum number of connections in the pool
-                                               maxsize=int(os.getenv("DB_CONNECTION_MAX_LIMIT")))
+                                        port=int(os.getenv("DB_PORT")),
+                                        user=os.getenv("DB_USER"),
+                                        password=os.getenv("DB_PASSWORD"),
+                                        db=os.getenv("DB_NAME"),
+                                        autocommit=self.auto_commit, # Autocommit is set to false so that the connection can be committed after the query is executed
+                                        minsize=1, # Minimum number of connections in the pool
+                                        maxsize=int(os.getenv("DB_CONNECTION_MAX_LIMIT")))            
         return pool
 
     async def end(self) -> None: # Must be ended by calling this function

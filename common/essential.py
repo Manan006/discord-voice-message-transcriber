@@ -26,6 +26,7 @@ class essentials: # Is considered essential for the bot to run
             self.LOG_LEVEL = config["logging"]["level"]
             self.LOG_FILE = config["logging"]["file"]
             self.ENABLE_STREAM_HANDLER = config.getboolean("logging", "enable_stream_handler")
+            self.ENABLE_SQL = config.getboolean("sql", "enable")
         except (configparser.NoOptionError, ValueError) as e:
             print(e)
             print("Something is wrong with your config.ini file.")

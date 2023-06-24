@@ -3,9 +3,9 @@ from typing import List, Optional
 import discord
 from discord.ext import commands
 import common
+import sys
 import asyncio
-
-logger = common.logger("Bot")
+logger = common.logger("CustomBot")
 
 
 class Bot(commands.Bot):
@@ -17,7 +17,8 @@ class Bot(commands.Bot):
         **kwargs,
     ):
         logger.info("Initializing discord.py")
-        super().__init__(*args, **kwargs)
+        self.super = super()
+        self.super.__init__(*args, **kwargs)
         self.testing_guild_id = testing_guild_id
         self.initial_extensions = initial_extensions
 
@@ -43,3 +44,14 @@ class Bot(commands.Bot):
 
         # This would also be a good place to connect to our database and
         # load anything that should be in memory prior to handling events.
+    def run(self,token,close_func,*args,**kwargs):
+        self.close_func = close_func
+        try:
+            self.super.run(token,*args,**kwargs)
+        except Exception as e:
+            print(e)
+        sys.exit(1)
+
+    async def close(self,*args,**kwargs):
+        await self.close_func()
+        await self.super.close(*args,**kwargs)

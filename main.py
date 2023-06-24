@@ -16,12 +16,17 @@ bot = Bot(command_prefix="%",intents=Intents.all(),testing_guild_id=926456391831
 recognizer = speech_recognition.Recognizer()
 
 
-
-db = common.mariadb('transcriptions')
-logger = common.logger("transcribe")
 essentials = common.essentials()
-
-
+logger = common.logger("Bot")
+if essentials.ENABLE_SQL:
+	db = common.mariadb('transcriptions',True)
+	if not db.success:
+		logger.error("Could not connect to database. Running with SQL disabled")
+		print("ERROR: Could not connect to database. Running with SQL disabled... Check logs for more information.")
+		essentials.ENABLE_SQL = False
+		cache = {}
+else:
+	cache = {}
 async def transcribe_message(message):
 	if len(message.attachments) == 0:
 		await message.reply("Transcription failed! (No Voice Message)", mention_author=False)
@@ -34,9 +39,10 @@ async def transcribe_message(message):
 	
 	logger.info("Transcribing message " + str(message.id))
 	msg = await message.reply("✨ Transcribing...", mention_author=False)
-	await db.cursor.execute("INSERT INTO `transcriptions` (`msg_id`, `reply_link`) VALUES (%s, %s)", ("123", message.jump_url))
-	await db.conn.commit()
-	# previous_transcriptions[message.id] = msg.jump_url
+	if essentials.ENABLE_SQL:
+		await db.cursor.execute("INSERT INTO `transcriptions` (`msg_id`, `reply_link`) VALUES (%s, %s)", (message.id, msg.jump_url))
+	else:
+		cache[message.id] = msg.jump_url
 	
 	# Read voice file and converts it into something pydub can work with
 	voice_file = await message.attachments[0].read()
@@ -91,7 +97,14 @@ async def open_source(interaction: discord.Interaction):
 	
 @bot.tree.context_menu(name="Transcribe VM")
 async def transcribe_contextmenu(interaction: discord.Interaction, message: discord.Message):
-	if transcription_link:=(await db.cursor.fetchone()) is not None:
+	if essentials.ENABLE_SQL:
+		await db.cursor.execute("SELECT `reply_link` FROM `transcriptions` WHERE `msg_id` = %s",(message.id,))
+		transcription_link = await db.cursor.fetchone()
+		if transcription_link is not None:
+			transcription_link = transcription_link[0]
+	else:
+		transcription_link =  cache.get(message.id)
+	if transcription_link is not None:
 		await interaction.response.send_message(content=transcription_link, ephemeral=True)
 		return
 	await interaction.response.send_message(content="Transcription started!", ephemeral=True)
@@ -106,10 +119,17 @@ async def exit(interaction: discord.Interaction):
 		return
 	logger.info("Exiting bot")
 	await interaction.response.send_message("Exiting...", ephemeral=True)
-	await db.end()
+	if essentials.ENABLE_SQL:
+		await db.end()
 	await bot.close()
 	logger.info("Exited bot")
 	
+async def close_gracefully():
+	logger.info("Exiting bot")
+	if essentials.ENABLE_SQL:
+		await db.end()
+	logger.info("Exited bot")
+	print("Exited bot gracefully")
 
 if __name__ == "__main__":
-	bot.run(BOT_TOKEN)
+	bot.run(BOT_TOKEN,close_gracefully)
